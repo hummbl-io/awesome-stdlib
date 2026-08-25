@@ -21,7 +21,7 @@ def get_stdlib_module_names() -> set[str]:
         names = set(sys.builtin_module_names)
     
     # Common internal/platform standard modules
-    names.update({"_thread", "_winapi", "winreg", "posix", "nt", "msvcrt"})
+    names.update({"tomllib", "wsgiref", "_thread", "_winapi", "winreg", "posix", "nt", "msvcrt"})
     return names
 
 
