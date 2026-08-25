@@ -1,0 +1,40 @@
+{
+  "name": "awesome-stdlib",
+  "version": "1.0.0",
+  "description": "Curated index of zero-dependency Python standard library recipes and verified packages",
+  "homepage": "https://github.com/hummbl-io/awesome-stdlib",
+  "recipes": [
+    {
+      "id": "http-json-client",
+      "name": "Drop-in JSON HTTP Client",
+      "replaces": ["requests", "httpx", "urllib3"],
+      "python_min_version": "3.10",
+      "modules": ["urllib.request", "urllib.error", "json"],
+      "code": "import urllib.request\nimport urllib.error\nimport json\n\ndef http_json_request(url: str, method: str = 'GET', payload: dict = None, timeout: float = 10.0) -> dict:\n    headers = {'User-Agent': 'Awesome-Stdlib/1.0', 'Accept': 'application/json'}\n    data = json.dumps(payload).encode('utf-8') if payload else None\n    if data:\n        headers['Content-Type'] = 'application/json'\n    req = urllib.request.Request(url, data=data, headers=headers, method=method.upper())\n    with urllib.request.urlopen(req, timeout=timeout) as resp:\n        return json.loads(resp.read().decode('utf-8'))\n"
+    },
+    {
+      "id": "dag-topological-sorter",
+      "name": "Cycle-Free Dependency DAG Sorter",
+      "replaces": ["networkx"],
+      "python_min_version": "3.9",
+      "modules": ["graphlib"],
+      "code": "import graphlib\n\ndef compute_execution_order(dag: dict[str, set[str]]) -> list[str]:\n    ts = graphlib.TopologicalSorter(dag)\n    return list(ts.static_order())\n"
+    },
+    {
+      "id": "rfc8785-jcs-receipt-signer",
+      "name": "Canonical JSON HMAC Signer",
+      "replaces": ["pyjwt", "cryptography"],
+      "python_min_version": "3.10",
+      "modules": ["hmac", "hashlib", "json"],
+      "code": "import hmac\nimport hashlib\nimport json\n\ndef sign_canonical_receipt(secret_key: bytes, payload: dict) -> str:\n    canonical_bytes = json.dumps(payload, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')\n    return hmac.new(secret_key, canonical_bytes, hashlib.sha256).hexdigest()\n"
+    },
+    {
+      "id": "token-bucket-rate-limiter",
+      "name": "Monotonic Token Bucket Rate Limiter",
+      "replaces": ["ratelimit", "limits"],
+      "python_min_version": "3.10",
+      "modules": ["time", "threading"],
+      "code": "import time\nfrom threading import Lock\n\nclass TokenBucketLimiter:\n    def __init__(self, refill_rate_per_sec: float, max_tokens: int):\n        self.rate = refill_rate_per_sec\n        self.capacity = max_tokens\n        self.tokens = float(max_tokens)\n        self.last_refill = time.monotonic()\n        self.lock = Lock()\n\n    def acquire(self, tokens: int = 1) -> bool:\n        with self.lock:\n            now = time.monotonic()\n            elapsed = now - self.last_refill\n            self.last_refill = now\n            self.tokens = min(float(self.capacity), self.tokens + elapsed * self.rate)\n            if self.tokens >= tokens:\n                self.tokens -= tokens\n                return True\n            return False\n"
+    }
+  ]
+}
