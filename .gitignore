@@ -4,3 +4,10 @@ __pycache__/
 .venv/
 .pytest_cache/
 .DS_Store
+
+# Secrets and Keys
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
