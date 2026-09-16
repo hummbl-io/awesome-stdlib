@@ -11,3 +11,8 @@ __pycache__/
 *.pem
 *.key
 credentials*.json
+
+# HUMMBL fleet
+_internal/
+_between/
+_external/
