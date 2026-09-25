@@ -28,3 +28,7 @@ jobs:
       - name: Run AST Zero-Dependency Linter
         run: |
           python scripts/verify_zero_deps.py
+
+      - name: Run Unit Tests
+        run: |
+          python -m unittest discover -s tests -v
