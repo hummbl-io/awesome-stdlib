@@ -1,8 +1,8 @@
-import unittest
-import json
-import time
-import tempfile
 import datetime
+import json
+import tempfile
+import time
+import unittest
 from pathlib import Path
 
 # Load registry.json recipes dynamically
@@ -98,19 +98,19 @@ class StdlibRecipesTests(unittest.TestCase):
         self.assertIn("test", order[1:3])
         self.assertEqual(order[-1], "build")
 
-    def test_rfc8785_jcs_receipt_signer(self):
-        code = RECIPES_BY_ID["rfc8785-jcs-receipt-signer"]["code"]
+    def test_python_json_hmac_signer(self):
+        code = RECIPES_BY_ID["python-json-hmac-signer"]["code"]
         namespace = {}
         exec(code, namespace)
-        sign_canonical_receipt = namespace["sign_canonical_receipt"]
-        verify_canonical_receipt = namespace["verify_canonical_receipt"]
+        sign_json_receipt = namespace["sign_json_receipt"]
+        verify_json_receipt = namespace["verify_json_receipt"]
 
         secret = b"fleet-master-key-xyz"
         payload = {"b": 2, "a": 1, "z": [3, 2, 1]}
-        sig = sign_canonical_receipt(secret, payload)
+        sig = sign_json_receipt(secret, payload)
         self.assertIsInstance(sig, str)
-        self.assertTrue(verify_canonical_receipt(secret, payload, sig))
-        self.assertFalse(verify_canonical_receipt(secret, {"b": 3, "a": 1}, sig))
+        self.assertTrue(verify_json_receipt(secret, payload, sig))
+        self.assertFalse(verify_json_receipt(secret, {"b": 3, "a": 1}, sig))
 
     def test_data_contract(self):
         code = RECIPES_BY_ID["data-contract"]["code"]
@@ -161,12 +161,12 @@ class StdlibRecipesTests(unittest.TestCase):
         exec(code, namespace)
         is_cron_due = namespace["is_cron_due"]
 
-        # Monday is weekday 0 in python datetime.weekday()
+        # Cron uses Sunday=0/7 and Monday=1, unlike datetime.weekday().
         # 2026-09-21 was a Monday
         dt = datetime.datetime(2026, 9, 21, 14, 30)
-        self.assertTrue(is_cron_due("30 14 * * 0", dt))
-        self.assertTrue(is_cron_due("*/15 14 * * 0", dt))
-        self.assertFalse(is_cron_due("0 14 * * 0", dt))
+        self.assertTrue(is_cron_due("30 14 * * 1", dt))
+        self.assertTrue(is_cron_due("*/15 14 * * 1", dt))
+        self.assertFalse(is_cron_due("0 14 * * 1", dt))
 
     def test_event_emitter(self):
         code = RECIPES_BY_ID["event-emitter"]["code"]
@@ -243,6 +243,62 @@ class StdlibRecipesTests(unittest.TestCase):
         self.assertEqual(pq.pop(), "medium-priority")
         self.assertEqual(pq.pop(), "low-priority")
         self.assertIsNone(pq.pop())
+
+    def recipe_namespace(self, ident):
+        data = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        recipe = next(row for row in data["recipes"] if row["id"] == ident)
+        namespace = {}
+        # Execute only these explicitly reviewed, local, side-effect-free recipe definitions.
+        self.assertIn(ident, {"cron-pattern-matcher", "python-json-hmac-signer", "http-json-client"})
+        exec(compile(recipe["code"], f"<recipe:{ident}>", "exec"), namespace)
+        return namespace
+
+    def test_cron_sunday_aliases_and_monday(self):
+        due = self.recipe_namespace("cron-pattern-matcher")["is_cron_due"]
+        sunday = datetime.datetime(2026, 9, 27)
+        monday = datetime.datetime(2026, 9, 28)
+        self.assertTrue(due("0 0 * * 0", sunday))
+        self.assertTrue(due("0 0 * * 7", sunday))
+        self.assertFalse(due("0 0 * * 0", monday))
+        self.assertTrue(due("0 0 * * 1", monday))
+
+    def test_cron_restricted_days_use_or_and_wildcards_use_and(self):
+        due = self.recipe_namespace("cron-pattern-matcher")["is_cron_due"]
+        self.assertTrue(due("0 0 13 * 1", datetime.datetime(2026, 9, 13)))
+        self.assertTrue(due("0 0 13 * 1", datetime.datetime(2026, 9, 28)))
+        self.assertFalse(due("0 0 13 * 1", datetime.datetime(2026, 9, 29)))
+        self.assertFalse(due("0 0 * * 1", datetime.datetime(2026, 9, 13)))
+        self.assertFalse(due("0 0 13 * *", datetime.datetime(2026, 9, 28)))
+
+    def test_cron_lists_ranges_steps_and_field_validation(self):
+        due = self.recipe_namespace("cron-pattern-matcher")["is_cron_due"]
+        self.assertTrue(due("*/15 0,12 * 1-5/2 *", datetime.datetime(2026, 3, 1, 12, 30)))
+        self.assertFalse(due("*/15 0,12 * 1-5/2 *", datetime.datetime(2026, 2, 1, 12, 30)))
+        self.assertTrue(due("0 0 * */2 *", datetime.datetime(2026, 1, 1)))
+        for invalid in ("*/0 * * * *", "60 * * * *", "* 24 * * *", "* * 0 * *",
+                        "* * * 13 *", "* * * * 8", "* * * * 4-2", "* * * * mon",
+                        "* * * *", "1/2 * * * *"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                due(invalid, datetime.datetime(2026, 9, 27))
+
+    def test_json_hmac_roundtrip_tamper_and_nonfinite_rejection(self):
+        ns = self.recipe_namespace("python-json-hmac-signer")
+        sign, verify = ns["sign_json_receipt"], ns["verify_json_receipt"]
+        signature = sign(b"test-key", {"n": 1, "text": "a  b"})
+        self.assertTrue(verify(b"test-key", {"text": "a  b", "n": 1}, signature))
+        self.assertFalse(verify(b"test-key", {"text": "a b", "n": 1}, signature))
+        with self.assertRaises(ValueError):
+            sign(b"test-key", {"n": float("nan")})
+
+    def test_http_json_preserves_empty_object_payload(self):
+        from unittest.mock import MagicMock, patch
+        ns = self.recipe_namespace("http-json-client")
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{}'
+        with patch("urllib.request.urlopen", return_value=response) as request:
+            ns["http_json_request"]("https://example.invalid", "POST", {})
+        self.assertEqual(request.call_args.args[0].data, b'{}')
+
 
 
 if __name__ == "__main__":

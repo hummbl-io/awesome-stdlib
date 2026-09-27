@@ -2,9 +2,9 @@
 
 # Awesome Stdlib [![Awesome](https://awesome.re/badge.svg)](https://awesome.re) [![Zero Dependencies](https://img.shields.io/badge/Dependencies-0%20Runtime%20Deps-brightgreen)](scripts/verify_zero_deps.py) [![CI](https://github.com/hummbl-io/awesome-stdlib/actions/workflows/ci.yml/badge.svg)](https://github.com/hummbl-io/awesome-stdlib/actions)
 
-> A curated collection of production-grade patterns, drop-in recipes, and verified zero-dependency Python packages built entirely with the **Python Standard Library**.
+> Python standard library examples to inspect and adapt, alongside a directory of related Python packages. Examples are not drop-in equivalents or a certification of production readiness.
 
-*Batteries Included. Zero Supply-Chain Attack Surface. 100% Pure Python.*
+*Batteries included. Fewer dependencies do not eliminate security or maintenance risks.*
 
 </div>
 
@@ -13,7 +13,7 @@
 ## Contents
 
 - [Why Stdlib-Only?](#why-stdlib-only)
-- [Drop-in Replacements](#drop-in-replacements)
+- [Stdlib Examples](#stdlib-examples)
   - [HTTP & Networking](#http--networking)
   - [Schemas & Validation](#schemas--validation)
   - [Graphs & DAG Scheduling](#graphs--dag-scheduling)
@@ -24,7 +24,7 @@
   - [Terminal & CLI Formatting](#terminal--cli-formatting)
 - [Modern Python Hidden Gems (3.11+)](#modern-python-hidden-gems-311)
 - [Verified Zero-Dependency PyPI Packages](#verified-zero-dependency-pypi-packages)
-- [AST Verification Gate](#ast-verification-gate)
+- [AST checks and focused tests](#ast-checks-and-focused-tests)
 - [Contributing](#contributing)
 
 ---
@@ -36,11 +36,11 @@ In modern software engineering, AI agent swarms, defense systems, and fintech in
 2. **Dependency Churn**: Breaking trans-dependency updates across subagent microservices.
 3. **Audit Bloat**: Pulling 50,000 lines of untrusted third-party code for a 5-line utility.
 
-The Python Standard Library provides hardened, high-performance primitives that can replace 90%+ of common dependencies with zero third-party packages.
+The Python standard library can support some use cases without third-party imports. Choose between a focused example and a maintained package by checking the behavior, limits and maintenance work your application requires. The related-package labels in this catalog are context, not claims of equivalent APIs or guarantees.
 
 ---
 
-## Drop-in Replacements
+## Stdlib Examples
 
 ### HTTP & Networking
 
@@ -129,25 +129,26 @@ def compute_execution_order(dependency_graph: dict[str, set[str]]) -> list[str]:
 
 ### Cryptography & Hashing
 
-#### Replace `pyjwt` HMAC with Canonical RFC 8785 Receipts
+#### Python JSON HMAC example (not RFC 8785 or JWT)
 ```python
 import hmac
 import hashlib
 import json
 from typing import Dict, Any
 
-def sign_canonical_receipt(secret_key: bytes, payload: Dict[str, Any]) -> str:
-    """Deterministic RFC 8785 JSON HMAC-SHA256 signature generator."""
-    canonical_bytes = json.dumps(
+def sign_json_receipt(secret_key: bytes, payload: Dict[str, Any]) -> str:
+    """HMAC over this Python JSON encoding; not RFC 8785 JCS or JWT."""
+    encoded_bytes = json.dumps(
         payload,
         separators=(',', ':'),
         sort_keys=True,
-        ensure_ascii=False
+        ensure_ascii=False,
+        allow_nan=False
     ).encode('utf-8')
-    return hmac.new(secret_key, canonical_bytes, hashlib.sha256).hexdigest()
+    return hmac.new(secret_key, encoded_bytes, hashlib.sha256).hexdigest()
 
-def verify_canonical_receipt(secret_key: bytes, payload: Dict[str, Any], expected_sig: str) -> bool:
-    candidate_sig = sign_canonical_receipt(secret_key, payload)
+def verify_json_receipt(secret_key: bytes, payload: Dict[str, Any], expected_sig: str) -> bool:
+    candidate_sig = sign_json_receipt(secret_key, payload)
     return hmac.compare_digest(expected_sig.encode(), candidate_sig.encode())
 ```
 
@@ -282,17 +283,19 @@ Production libraries on PyPI with **0 runtime dependencies**:
 
 ---
 
-## AST Verification & Test Suite Gate
+## AST checks and focused tests
 
-Every snippet and recipe in this repository is verified in CI:
+CI runs import checks and focused behavior tests. These have different scopes:
 ```bash
 # 1. AST Zero-Dependency Linter across README and registry.json (30 recipes)
 python scripts/verify_zero_deps.py
 
-# 2. Comprehensive unit test suite executing all recipes
+# 2. Focused recipe behavior and regression tests
 python -m unittest discover -s tests -v
 ```
-Uses `ast.parse` to ensure 100% of imported modules exist within `sys.stdlib_module_names`. All 30 recipes in `registry.json` are executable and covered by automated regression tests.
+The AST check inspects explicit imports against `sys.stdlib_module_names`; it does not establish runtime safety, dependency behavior reached through dynamic loading, or functional equivalence with another package. The registry contains 30 examples, but focused tests cover selected behavior rather than every recipe or supported platform. Read each example's notes and run the checks relevant to your application before reuse.
+
+The numeric cron example follows Sunday=0/7 and restricted day-of-month/day-of-week OR matching, as described in [crontab(5)](https://man7.org/linux/man-pages/man5/crontab.5.html); it excludes names and extended syntax. The HMAC example intentionally does not implement [RFC 8785 JCS](https://www.rfc-editor.org/rfc/rfc8785.html): Python JSON number serialization and key ordering are a different contract. Peers must agree on the same encoding and input types. A matching HMAC does not itself grant authority.
 
 ---
 
