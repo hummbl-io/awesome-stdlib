@@ -1,16 +1,17 @@
 {
   "name": "awesome-stdlib",
   "version": "1.0.0",
-  "description": "Curated index of zero-dependency Python standard library recipes and verified packages",
+  "description": "Python standard library examples to inspect and adapt; related packages are not equivalence claims",
   "homepage": "https://github.com/hummbl-io/awesome-stdlib",
   "recipes": [
     {
       "id": "http-json-client",
-      "name": "Drop-in JSON HTTP Client",
+      "name": "JSON HTTP Request Helper",
       "replaces": ["requests", "httpx", "urllib3"],
       "python_min_version": "3.10",
       "modules": ["urllib.request", "urllib.error", "json"],
-      "code": "import urllib.request\nimport urllib.error\nimport json\n\ndef http_json_request(url: str, method: str = 'GET', payload: dict = None, timeout: float = 10.0) -> dict:\n    headers = {'User-Agent': 'Awesome-Stdlib/1.0', 'Accept': 'application/json'}\n    data = json.dumps(payload).encode('utf-8') if payload else None\n    if data:\n        headers['Content-Type'] = 'application/json'\n    req = urllib.request.Request(url, data=data, headers=headers, method=method.upper())\n    with urllib.request.urlopen(req, timeout=timeout) as resp:\n        return json.loads(resp.read().decode('utf-8'))\n"
+      "code": "import urllib.request\nimport urllib.error\nimport json\n\ndef http_json_request(url: str, method: str = 'GET', payload: dict = None, timeout: float = 10.0) -> dict:\n    headers = {'User-Agent': 'Awesome-Stdlib/1.0', 'Accept': 'application/json'}\n    data = json.dumps(payload).encode('utf-8') if payload is not None else None\n    if data:\n        headers['Content-Type'] = 'application/json'\n    req = urllib.request.Request(url, data=data, headers=headers, method=method.upper())\n    with urllib.request.urlopen(req, timeout=timeout) as resp:\n        return json.loads(resp.read().decode('utf-8'))\n",
+      "notes": "A small urllib example, not a requests/httpx-compatible client. Review redirects, authentication, response limits and error handling for your application."
     },
     {
       "id": "dag-topological-sorter",
@@ -21,12 +22,13 @@
       "code": "import graphlib\n\ndef compute_execution_order(dag: dict[str, set[str]]) -> list[str]:\n    ts = graphlib.TopologicalSorter(dag)\n    return list(ts.static_order())\n"
     },
     {
-      "id": "rfc8785-jcs-receipt-signer",
-      "name": "Canonical JSON HMAC Signer",
+      "id": "python-json-hmac-signer",
+      "name": "Python JSON HMAC Example",
       "replaces": ["pyjwt", "cryptography"],
       "python_min_version": "3.10",
       "modules": ["hmac", "hashlib", "json"],
-      "code": "import hmac\nimport hashlib\nimport json\n\ndef sign_canonical_receipt(secret_key: bytes, payload: dict) -> str:\n    canonical_bytes = json.dumps(payload, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')\n    return hmac.new(secret_key, canonical_bytes, hashlib.sha256).hexdigest()\n\ndef verify_canonical_receipt(secret_key: bytes, payload: dict, expected_sig: str) -> bool:\n    candidate_sig = sign_canonical_receipt(secret_key, payload)\n    return hmac.compare_digest(expected_sig.encode(), candidate_sig.encode())\n"
+      "code": "import hmac\nimport hashlib\nimport json\n\ndef sign_json_receipt(secret_key: bytes, payload: dict) -> str:\n    encoded_bytes = json.dumps(payload, separators=(',', ':'), sort_keys=True, ensure_ascii=False, allow_nan=False).encode('utf-8')\n    return hmac.new(secret_key, encoded_bytes, hashlib.sha256).hexdigest()\n\ndef verify_json_receipt(secret_key: bytes, payload: dict, expected_sig: str) -> bool:\n    candidate_sig = sign_json_receipt(secret_key, payload)\n    return hmac.compare_digest(expected_sig.encode(), candidate_sig.encode())\n",
+      "notes": "Not RFC 8785 JCS, JWT or a cross-language canonicalization scheme. Peers must agree on the same Python JSON encoding and input types; HMAC verification alone is not authorization."
     },
     {
       "id": "token-bucket-rate-limiter",
@@ -46,11 +48,12 @@
     },
     {
       "id": "bounded-task-pool",
-      "name": "Bounded Worker Task Pool",
+      "name": "Fixed-Concurrency Thread Pool Example",
       "replaces": ["celery", "threadpool", "multiprocessing.Pool"],
       "python_min_version": "3.10",
       "modules": ["concurrent.futures"],
-      "code": "import concurrent.futures\nfrom typing import Callable, Any, Iterable\n\nclass BoundedTaskPool:\n    def __init__(self, max_workers: int = 4):\n        self.max_workers = max_workers\n        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)\n\n    def map(self, func: Callable[[Any], Any], iterable: Iterable[Any]) -> list[Any]:\n        futures = [self.executor.submit(func, item) for item in iterable]\n        return [f.result() for f in futures]\n\n    def shutdown(self, wait: bool = True) -> None:\n        self.executor.shutdown(wait=wait)\n\n    def __enter__(self):\n        return self\n\n    def __exit__(self, exc_type, exc_val, exc_tb):\n        self.shutdown(wait=True)\n"
+      "code": "import concurrent.futures\nfrom typing import Callable, Any, Iterable\n\nclass BoundedTaskPool:\n    def __init__(self, max_workers: int = 4):\n        self.max_workers = max_workers\n        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)\n\n    def map(self, func: Callable[[Any], Any], iterable: Iterable[Any]) -> list[Any]:\n        futures = [self.executor.submit(func, item) for item in iterable]\n        return [f.result() for f in futures]\n\n    def shutdown(self, wait: bool = True) -> None:\n        self.executor.shutdown(wait=wait)\n\n    def __enter__(self):\n        return self\n\n    def __exit__(self, exc_type, exc_val, exc_tb):\n        self.shutdown(wait=True)\n",
+      "notes": "Limits active workers, not queued submissions or input size: map eagerly submits the whole iterable. Add backpressure before using unbounded inputs."
     },
     {
       "id": "ascii-table-formatter",
@@ -70,11 +73,12 @@
     },
     {
       "id": "shared-memory-kill-switch",
-      "name": "Atomic Zero-Copy Shared Memory Kill Switch",
+      "name": "Shared Memory Stop Flag Example",
       "replaces": ["redis", "pymemcache"],
       "python_min_version": "3.10",
       "modules": ["mmap", "os"],
-      "code": "import mmap\nimport os\n\ndef create_shared_kill_switch(path: str) -> mmap.mmap:\n    with open(path, 'a+b') as f:\n        if os.path.getsize(path) < 1:\n            f.write(b'\\x00')\n            f.flush()\n        return mmap.mmap(f.fileno(), 1, access=mmap.ACCESS_WRITE)\n\ndef trip_kill_switch(shm: mmap.mmap):\n    shm[0] = 1\n\ndef is_kill_switch_tripped(shm: mmap.mmap) -> bool:\n    return shm[0] == 1\n"
+      "code": "import mmap\nimport os\n\ndef create_shared_kill_switch(path: str) -> mmap.mmap:\n    with open(path, 'a+b') as f:\n        if os.path.getsize(path) < 1:\n            f.write(b'\\x00')\n            f.flush()\n        return mmap.mmap(f.fileno(), 1, access=mmap.ACCESS_WRITE)\n\ndef trip_kill_switch(shm: mmap.mmap):\n    shm[0] = 1\n\ndef is_kill_switch_tripped(shm: mmap.mmap) -> bool:\n    return shm[0] == 1\n",
+      "notes": "A cooperative flag, not an enforced process kill or authorization boundary. Consumers must poll it; this example supplies no cross-platform atomicity guarantee."
     },
     {
       "id": "toml-config-parser",
@@ -118,11 +122,12 @@
     },
     {
       "id": "atomic-file-writer",
-      "name": "Crash-Consistent Atomic File Writer",
+      "name": "Atomic File Replacement Example",
       "replaces": ["atomicwrites", "boltons"],
       "python_min_version": "3.10",
       "modules": ["tempfile", "os", "pathlib"],
-      "code": "import tempfile\nimport os\nfrom pathlib import Path\n\ndef write_file_atomic(target_path: Path, content: str, encoding: str = 'utf-8') -> None:\n    target_path = Path(target_path)\n    parent = target_path.parent\n    parent.mkdir(parents=True, exist_ok=True)\n    with tempfile.NamedTemporaryFile('w', dir=parent, delete=False, encoding=encoding) as tf:\n        tf.write(content)\n        tf.flush()\n        os.fsync(tf.fileno())\n        temp_name = tf.name\n    os.replace(temp_name, target_path)\n"
+      "code": "import tempfile\nimport os\nfrom pathlib import Path\n\ndef write_file_atomic(target_path: Path, content: str, encoding: str = 'utf-8') -> None:\n    target_path = Path(target_path)\n    parent = target_path.parent\n    parent.mkdir(parents=True, exist_ok=True)\n    with tempfile.NamedTemporaryFile('w', dir=parent, delete=False, encoding=encoding) as tf:\n        tf.write(content)\n        tf.flush()\n        os.fsync(tf.fileno())\n        temp_name = tf.name\n    os.replace(temp_name, target_path)\n",
+      "notes": "Flushes the temporary file then replaces the target. It does not fsync the parent directory, preserve prior file metadata, or guarantee recovery after power loss."
     },
     {
       "id": "secure-token-generator",
@@ -166,11 +171,12 @@
     },
     {
       "id": "cron-pattern-matcher",
-      "name": "Standard 5-Field Cron Expression Matcher",
+      "name": "Numeric Five-Field Cron Matcher",
       "replaces": ["croniter", "crontab"],
       "python_min_version": "3.10",
       "modules": ["datetime"],
-      "code": "import datetime\n\ndef matches_cron_field(field_val: int, pattern: str) -> bool:\n    if pattern == '*':\n        return True\n    if pattern.startswith('*/'):\n        step = int(pattern[2:])\n        return field_val % step == 0\n    if ',' in pattern:\n        return field_val in [int(x) for x in pattern.split(',')]\n    if '-' in pattern:\n        start, end = map(int, pattern.split('-'))\n        return start <= field_val <= end\n    return field_val == int(pattern)\n\ndef is_cron_due(cron_expr: str, dt: datetime.datetime) -> bool:\n    minute_p, hour_p, day_p, month_p, dow_p = cron_expr.split()\n    return (\n        matches_cron_field(dt.minute, minute_p) and\n        matches_cron_field(dt.hour, hour_p) and\n        matches_cron_field(dt.day, day_p) and\n        matches_cron_field(dt.month, month_p) and\n        matches_cron_field(dt.weekday(), dow_p)\n    )\n"
+      "code": "import datetime\n\ndef cron_values(pattern: str, minimum: int, maximum: int) -> set[int]:\n    values = set()\n    for item in pattern.split(','):\n        base, separator, step_text = item.partition('/')\n        step = int(step_text) if separator else 1\n        if step <= 0:\n            raise ValueError('cron step must be positive')\n        if base == '*':\n            start, end = minimum, maximum\n        elif '-' in base:\n            start_text, end_text = base.split('-')\n            start, end = int(start_text), int(end_text)\n        else:\n            if separator:\n                raise ValueError('steps require a wildcard or range')\n            start = end = int(base)\n        if not minimum <= start <= end <= maximum:\n            raise ValueError('cron value outside field range')\n        values.update(range(start, end + 1, step))\n    return values\n\ndef is_cron_due(cron_expr: str, dt: datetime.datetime) -> bool:\n    minute_p, hour_p, day_p, month_p, dow_p = cron_expr.split()\n    minutes = cron_values(minute_p, 0, 59)\n    hours = cron_values(hour_p, 0, 23)\n    days = cron_values(day_p, 1, 31)\n    months = cron_values(month_p, 1, 12)\n    weekdays = {day % 7 for day in cron_values(dow_p, 0, 7)}\n    day_matches = dt.day in days\n    weekday_matches = (dt.weekday() + 1) % 7 in weekdays\n    if day_p.startswith('*') or dow_p.startswith('*'):\n        calendar_matches = day_matches and weekday_matches\n    else:\n        calendar_matches = day_matches or weekday_matches\n    return (dt.minute in minutes and dt.hour in hours\n            and dt.month in months and calendar_matches)\n",
+      "notes": "Supports numeric values, lists, ranges, wildcards and steps; no month/day names or extended syntax. Sunday is 0 or 7. Supply a datetime in your intended timezone; this is not a scheduler."
     },
     {
       "id": "event-emitter",
@@ -194,7 +200,8 @@
       "replaces": ["uuid6", "ulid-py"],
       "python_min_version": "3.10",
       "modules": ["time", "secrets", "uuid"],
-      "code": "import time\nimport secrets\nimport uuid\n\n_last_ms = 0\n_counter = 0\n\ndef generate_uuidv7() -> uuid.UUID:\n    global _last_ms, _counter\n    now_ms = int(time.time() * 1000)\n    if now_ms <= _last_ms:\n        now_ms = _last_ms\n        _counter = (_counter + 1) & 0xFFF\n        if _counter == 0:\n            now_ms += 1\n            _last_ms = now_ms\n    else:\n        _last_ms = now_ms\n        _counter = 0\n    ts_bytes = now_ms.to_bytes(6, byteorder='big')\n    rand_bytes = secrets.token_bytes(8)\n    octet6 = 0x70 | ((_counter >> 8) & 0x0F)\n    octet7 = _counter & 0xFF\n    octet8 = 0x80 | (rand_bytes[0] & 0x3F)\n    raw = ts_bytes + bytes([octet6, octet7, octet8]) + rand_bytes[1:]\n    return uuid.UUID(bytes=raw)\n"
+      "code": "import time\nimport secrets\nimport uuid\n\n_last_ms = 0\n_counter = 0\n\ndef generate_uuidv7() -> uuid.UUID:\n    global _last_ms, _counter\n    now_ms = int(time.time() * 1000)\n    if now_ms <= _last_ms:\n        now_ms = _last_ms\n        _counter = (_counter + 1) & 0xFFF\n        if _counter == 0:\n            now_ms += 1\n            _last_ms = now_ms\n    else:\n        _last_ms = now_ms\n        _counter = 0\n    ts_bytes = now_ms.to_bytes(6, byteorder='big')\n    rand_bytes = secrets.token_bytes(8)\n    octet6 = 0x70 | ((_counter >> 8) & 0x0F)\n    octet7 = _counter & 0xFF\n    octet8 = 0x80 | (rand_bytes[0] & 0x3F)\n    raw = ts_bytes + bytes([octet6, octet7, octet8]) + rand_bytes[1:]\n    return uuid.UUID(bytes=raw)\n",
+      "notes": "Illustrative process-local state; not thread-safe or coordinated across processes. Monotonic ordering is not guaranteed under concurrent calls."
     },
     {
       "id": "stream-chunk-hasher",
