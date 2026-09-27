@@ -41,11 +41,13 @@ def verify_code_snippet(code: str, context_name: str) -> list[str]:
                 root_pkg = alias.name.split(".")[0]
                 if root_pkg not in stdlib_names:
                     errors.append(f"{context_name}: Illegal third-party import 'import {alias.name}'")
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                root_pkg = node.module.split(".")[0]
-                if not node.level and root_pkg not in stdlib_names:
-                    errors.append(f"{context_name}: Illegal third-party import 'from {node.module} import ...'")
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and not node.level
+            and node.module.split(".")[0] not in stdlib_names
+        ):
+            errors.append(f"{context_name}: Illegal third-party import 'from {node.module} import ...'")
 
     return errors
 
