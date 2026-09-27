@@ -201,7 +201,7 @@
       "python_min_version": "3.10",
       "modules": ["time", "secrets", "uuid"],
       "code": "import time\nimport secrets\nimport uuid\n\n_last_ms = 0\n_counter = 0\n\ndef generate_uuidv7() -> uuid.UUID:\n    global _last_ms, _counter\n    now_ms = int(time.time() * 1000)\n    if now_ms <= _last_ms:\n        now_ms = _last_ms\n        _counter = (_counter + 1) & 0xFFF\n        if _counter == 0:\n            now_ms += 1\n            _last_ms = now_ms\n    else:\n        _last_ms = now_ms\n        _counter = 0\n    ts_bytes = now_ms.to_bytes(6, byteorder='big')\n    rand_bytes = secrets.token_bytes(8)\n    octet6 = 0x70 | ((_counter >> 8) & 0x0F)\n    octet7 = _counter & 0xFF\n    octet8 = 0x80 | (rand_bytes[0] & 0x3F)\n    raw = ts_bytes + bytes([octet6, octet7, octet8]) + rand_bytes[1:]\n    return uuid.UUID(bytes=raw)\n",
-      "notes": "Illustrative process-local state; not thread-safe or coordinated across processes. Monotonic ordering is not guaranteed under concurrent calls."
+      "notes": "Illustrative process-local state; not thread-safe or coordinated across processes. Concurrent calls can produce out-of-order values."
     },
     {
       "id": "stream-chunk-hasher",
