@@ -12,7 +12,7 @@ permissions:
 jobs:
   verify:
     name: AST Zero-Dependency Verification
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
