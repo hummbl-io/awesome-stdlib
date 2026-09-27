@@ -26,7 +26,7 @@
       "replaces": ["pyjwt", "cryptography"],
       "python_min_version": "3.10",
       "modules": ["hmac", "hashlib", "json"],
-      "code": "import hmac\nimport hashlib\nimport json\n\ndef sign_canonical_receipt(secret_key: bytes, payload: dict) -> str:\n    canonical_bytes = json.dumps(payload, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')\n    return hmac.new(secret_key, canonical_bytes, hashlib.sha256).hexdigest()\n"
+      "code": "import hmac\nimport hashlib\nimport json\n\ndef sign_canonical_receipt(secret_key: bytes, payload: dict) -> str:\n    canonical_bytes = json.dumps(payload, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')\n    return hmac.new(secret_key, canonical_bytes, hashlib.sha256).hexdigest()\n\ndef verify_canonical_receipt(secret_key: bytes, payload: dict, expected_sig: str) -> bool:\n    candidate_sig = sign_canonical_receipt(secret_key, payload)\n    return hmac.compare_digest(expected_sig.encode(), candidate_sig.encode())\n"
     },
     {
       "id": "token-bucket-rate-limiter",
@@ -35,6 +35,214 @@
       "python_min_version": "3.10",
       "modules": ["time", "threading"],
       "code": "import time\nfrom threading import Lock\n\nclass TokenBucketLimiter:\n    def __init__(self, refill_rate_per_sec: float, max_tokens: int):\n        self.rate = refill_rate_per_sec\n        self.capacity = max_tokens\n        self.tokens = float(max_tokens)\n        self.last_refill = time.monotonic()\n        self.lock = Lock()\n\n    def acquire(self, tokens: int = 1) -> bool:\n        with self.lock:\n            now = time.monotonic()\n            elapsed = now - self.last_refill\n            self.last_refill = now\n            self.tokens = min(float(self.capacity), self.tokens + elapsed * self.rate)\n            if self.tokens >= tokens:\n                self.tokens -= tokens\n                return True\n            return False\n"
+    },
+    {
+      "id": "scrypt-password-hasher",
+      "name": "Memory-Hard Scrypt Password Hasher",
+      "replaces": ["bcrypt", "argon2-cffi", "passlib"],
+      "python_min_version": "3.10",
+      "modules": ["hashlib", "secrets", "hmac"],
+      "code": "import hashlib\nimport hmac\nimport secrets\n\ndef hash_password_scrypt(password: str, salt: bytes = None) -> tuple[bytes, bytes]:\n    if salt is None:\n        salt = secrets.token_bytes(16)\n    hashed = hashlib.scrypt(password.encode('utf-8'), salt=salt, n=16384, r=8, p=1, maxmem=32 * 1024 * 1024)\n    return hashed, salt\n\ndef verify_password_scrypt(password: str, hashed: bytes, salt: bytes) -> bool:\n    candidate = hashlib.scrypt(password.encode('utf-8'), salt=salt, n=16384, r=8, p=1, maxmem=32 * 1024 * 1024)\n    return hmac.compare_digest(candidate, hashed)\n"
+    },
+    {
+      "id": "bounded-task-pool",
+      "name": "Bounded Worker Task Pool",
+      "replaces": ["celery", "threadpool", "multiprocessing.Pool"],
+      "python_min_version": "3.10",
+      "modules": ["concurrent.futures"],
+      "code": "import concurrent.futures\nfrom typing import Callable, Any, Iterable\n\nclass BoundedTaskPool:\n    def __init__(self, max_workers: int = 4):\n        self.max_workers = max_workers\n        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)\n\n    def map(self, func: Callable[[Any], Any], iterable: Iterable[Any]) -> list[Any]:\n        futures = [self.executor.submit(func, item) for item in iterable]\n        return [f.result() for f in futures]\n\n    def shutdown(self, wait: bool = True) -> None:\n        self.executor.shutdown(wait=wait)\n\n    def __enter__(self):\n        return self\n\n    def __exit__(self, exc_type, exc_val, exc_tb):\n        self.shutdown(wait=True)\n"
+    },
+    {
+      "id": "ascii-table-formatter",
+      "name": "Dynamic ASCII Table Formatter",
+      "replaces": ["tabulate", "prettytable", "texttable"],
+      "python_min_version": "3.10",
+      "modules": ["typing"],
+      "code": "from typing import List, Dict, Any\n\ndef render_table(rows: List[Dict[str, Any]], headers: List[str]) -> str:\n    if not rows:\n        return ''\n    widths = {h: max(len(h), max(len(str(r.get(h, ''))) for r in rows)) for h in headers}\n    header_line = '| ' + ' | '.join(f\"{h:<{widths[h]}}\" for h in headers) + ' |'\n    divider_line = '+-' + '-+-'.join('-' * widths[h] for h in headers) + '-+'\n    data_lines = [\n        '| ' + ' | '.join(f\"{str(r.get(h, '')):<{widths[h]}}\" for h in headers) + ' |'\n        for r in rows\n    ]\n    return f\"{divider_line}\\n{header_line}\\n{divider_line}\\n\" + '\\n'.join(data_lines) + f\"\\n{divider_line}\"\n"
+    },
+    {
+      "id": "data-contract",
+      "name": "Frozen Data Contract Schema",
+      "replaces": ["pydantic", "attrs", "marshmallow"],
+      "python_min_version": "3.10",
+      "modules": ["dataclasses", "json", "typing"],
+      "code": "from dataclasses import dataclass, asdict, field\nfrom typing import Any, Dict, Optional\nimport json\n\n@dataclass(frozen=True)\nclass DataContract:\n    contract_id: str\n    max_budget_usd: float\n    allowed_ops: list[str] = field(default_factory=list)\n    metadata: Optional[Dict[str, Any]] = None\n\n    def __post_init__(self):\n        if self.max_budget_usd <= 0:\n            raise ValueError('max_budget_usd must be positive')\n        if not self.contract_id.strip():\n            raise ValueError('contract_id cannot be empty')\n\n    def to_json(self) -> str:\n        return json.dumps(asdict(self), separators=(',', ':'), sort_keys=True)\n"
+    },
+    {
+      "id": "shared-memory-kill-switch",
+      "name": "Atomic Zero-Copy Shared Memory Kill Switch",
+      "replaces": ["redis", "pymemcache"],
+      "python_min_version": "3.10",
+      "modules": ["mmap", "os"],
+      "code": "import mmap\nimport os\n\ndef create_shared_kill_switch(path: str) -> mmap.mmap:\n    with open(path, 'a+b') as f:\n        if os.path.getsize(path) < 1:\n            f.write(b'\\x00')\n            f.flush()\n        return mmap.mmap(f.fileno(), 1, access=mmap.ACCESS_WRITE)\n\ndef trip_kill_switch(shm: mmap.mmap):\n    shm[0] = 1\n\ndef is_kill_switch_tripped(shm: mmap.mmap) -> bool:\n    return shm[0] == 1\n"
+    },
+    {
+      "id": "toml-config-parser",
+      "name": "Pure Stdlib TOML Configuration Reader",
+      "replaces": ["tomli", "toml", "pyyaml"],
+      "python_min_version": "3.11",
+      "modules": ["tomllib", "pathlib"],
+      "code": "import tomllib\nfrom pathlib import Path\nfrom typing import Dict, Any\n\ndef read_toml_config(file_path: Path) -> Dict[str, Any]:\n    with open(file_path, 'rb') as f:\n        return tomllib.load(f)\n"
+    },
+    {
+      "id": "exponential-backoff-retry",
+      "name": "Jittered Exponential Backoff Retry Decorator",
+      "replaces": ["tenacity", "retry", "retrying"],
+      "python_min_version": "3.10",
+      "modules": ["time", "random", "functools", "typing"],
+      "code": "import time\nimport random\nimport functools\nfrom typing import Callable, Type, Tuple, Any\n\ndef retry_with_backoff(retries: int = 3, base_delay: float = 0.5, max_delay: float = 10.0, jitter: bool = True, retry_on: Tuple[Type[Exception], ...] = (Exception,)) -> Callable:\n    def decorator(func: Callable) -> Callable:\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs) -> Any:\n            delay = base_delay\n            last_err = None\n            for attempt in range(retries):\n                try:\n                    return func(*args, **kwargs)\n                except retry_on as err:\n                    last_err = err\n                    if attempt == retries - 1:\n                        raise\n                    sleep_time = min(delay, max_delay)\n                    if jitter:\n                        sleep_time = random.uniform(0, sleep_time)\n                    time.sleep(sleep_time)\n                    delay *= 2\n            if last_err:\n                raise last_err\n        return wrapper\n    return decorator\n"
+    },
+    {
+      "id": "in-memory-sqlite-kv",
+      "name": "Transactional SQLite Key-Value Store with TTL",
+      "replaces": ["rocksdb", "lmdb", "diskcache", "redis"],
+      "python_min_version": "3.10",
+      "modules": ["sqlite3", "time", "json"],
+      "code": "import sqlite3\nimport time\nimport json\nfrom typing import Optional, Any\n\nclass SQLiteKVStore:\n    def __init__(self, db_path: str = ':memory:'):\n        self.conn = sqlite3.connect(db_path)\n        with self.conn:\n            self.conn.execute('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, val TEXT, expires_at REAL)')\n\n    def set(self, key: str, value: Any, ttl_seconds: Optional[float] = None) -> None:\n        expires_at = time.time() + ttl_seconds if ttl_seconds is not None else None\n        serialized = json.dumps(value)\n        with self.conn:\n            self.conn.execute('INSERT OR REPLACE INTO kv (key, val, expires_at) VALUES (?, ?, ?)', (key, serialized, expires_at))\n\n    def get(self, key: str) -> Optional[Any]:\n        cur = self.conn.cursor()\n        cur.execute('SELECT val, expires_at FROM kv WHERE key = ?', (key,))\n        row = cur.fetchone()\n        if not row:\n            return None\n        val, expires_at = row\n        if expires_at and time.time() > expires_at:\n            with self.conn:\n                self.conn.execute('DELETE FROM kv WHERE key = ?', (key,))\n            return None\n        return json.loads(val)\n"
+    },
+    {
+      "id": "async-task-group",
+      "name": "Structured Concurrency Async TaskGroup Runner",
+      "replaces": ["trio", "anyio"],
+      "python_min_version": "3.11",
+      "modules": ["asyncio"],
+      "code": "import asyncio\nfrom typing import Coroutine, Any, List\n\nasync def run_concurrent_tasks(coroutines: List[Coroutine]) -> List[Any]:\n    results = [None] * len(coroutines)\n    async def _wrap(idx: int, coro: Coroutine):\n        results[idx] = await coro\n\n    async with asyncio.TaskGroup() as tg:\n        for idx, coro in enumerate(coroutines):\n            tg.create_task(_wrap(idx, coro))\n    return results\n"
+    },
+    {
+      "id": "structured-json-logger",
+      "name": "Structured JSON Log Formatter",
+      "replaces": ["structlog", "loguru", "python-json-logger"],
+      "python_min_version": "3.10",
+      "modules": ["logging", "json", "datetime"],
+      "code": "import logging\nimport json\nimport datetime\n\nclass JSONLogFormatter(logging.Formatter):\n    def format(self, record: logging.LogRecord) -> str:\n        log_entry = {\n            'timestamp': datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(),\n            'level': record.levelname,\n            'logger': record.name,\n            'message': record.getMessage(),\n        }\n        if record.exc_info:\n            log_entry['exception'] = self.formatException(record.exc_info)\n        return json.dumps(log_entry)\n"
+    },
+    {
+      "id": "atomic-file-writer",
+      "name": "Crash-Consistent Atomic File Writer",
+      "replaces": ["atomicwrites", "boltons"],
+      "python_min_version": "3.10",
+      "modules": ["tempfile", "os", "pathlib"],
+      "code": "import tempfile\nimport os\nfrom pathlib import Path\n\ndef write_file_atomic(target_path: Path, content: str, encoding: str = 'utf-8') -> None:\n    target_path = Path(target_path)\n    parent = target_path.parent\n    parent.mkdir(parents=True, exist_ok=True)\n    with tempfile.NamedTemporaryFile('w', dir=parent, delete=False, encoding=encoding) as tf:\n        tf.write(content)\n        tf.flush()\n        os.fsync(tf.fileno())\n        temp_name = tf.name\n    os.replace(temp_name, target_path)\n"
+    },
+    {
+      "id": "secure-token-generator",
+      "name": "Cryptographically Secure Nonce and Token Generator",
+      "replaces": ["nanoid", "shortuuid"],
+      "python_min_version": "3.10",
+      "modules": ["secrets", "string"],
+      "code": "import secrets\nimport string\n\ndef generate_secure_token(length: int = 32) -> str:\n    return secrets.token_urlsafe(length)[:length]\n\ndef generate_alphanumeric_code(length: int = 16) -> str:\n    alphabet = string.ascii_letters + string.digits\n    return ''.join(secrets.choice(alphabet) for _ in range(length))\n"
+    },
+    {
+      "id": "csv-dict-streamer",
+      "name": "Streaming CSV Dict Reader & Sniffer",
+      "replaces": ["pandas"],
+      "python_min_version": "3.10",
+      "modules": ["csv", "io"],
+      "code": "import csv\nimport io\nfrom typing import Iterator, Dict\n\ndef stream_csv_dicts(csv_data: str) -> Iterator[Dict[str, str]]:\n    f = io.StringIO(csv_data)\n    reader = csv.DictReader(f)\n    for row in reader:\n        yield dict(row)\n"
+    },
+    {
+      "id": "lru-cache-memoizer",
+      "name": "Configurable Memoizer with Stats Inspection",
+      "replaces": ["cachetools", "memoization"],
+      "python_min_version": "3.10",
+      "modules": ["functools"],
+      "code": "import functools\nfrom typing import Callable\n\ndef memoize_lru(maxsize: int = 128) -> Callable:\n    def decorator(func: Callable) -> Callable:\n        return functools.lru_cache(maxsize=maxsize)(func)\n    return decorator\n"
+    },
+    {
+      "id": "cli-subcommand-parser",
+      "name": "CLI Subcommand Dispatcher",
+      "replaces": ["click", "typer", "docopt"],
+      "python_min_version": "3.10",
+      "modules": ["argparse"],
+      "code": "import argparse\nfrom typing import Callable, Dict\n\nclass CLIDispatcher:\n    def __init__(self, description: str):\n        self.parser = argparse.ArgumentParser(description=description)\n        self.subparsers = self.parser.add_subparsers(dest='command', required=True)\n        self.handlers: Dict[str, Callable] = {}\n\n    def register(self, name: str, help_text: str, func: Callable) -> argparse.ArgumentParser:\n        sub = self.subparsers.add_parser(name, help=help_text)\n        self.handlers[name] = func\n        return sub\n\n    def execute(self, argv: list[str] = None) -> int:\n        args = self.parser.parse_args(argv)\n        handler = self.handlers.get(args.command)\n        return handler(args) if handler else 1\n"
+    },
+    {
+      "id": "sliding-window-counter",
+      "name": "Thread-Safe Sliding Window Rate Counter",
+      "replaces": ["redis", "limits"],
+      "python_min_version": "3.10",
+      "modules": ["collections", "time", "threading"],
+      "code": "import collections\nimport time\nfrom threading import Lock\n\nclass SlidingWindowCounter:\n    def __init__(self, window_seconds: float, max_hits: int):\n        self.window = window_seconds\n        self.max_hits = max_hits\n        self.hits = collections.deque()\n        self.lock = Lock()\n\n    def record_and_check(self) -> bool:\n        with self.lock:\n            now = time.monotonic()\n            cutoff = now - self.window\n            while self.hits and self.hits[0] <= cutoff:\n                self.hits.popleft()\n            if len(self.hits) < self.max_hits:\n                self.hits.append(now)\n                return True\n            return False\n"
+    },
+    {
+      "id": "cron-pattern-matcher",
+      "name": "Standard 5-Field Cron Expression Matcher",
+      "replaces": ["croniter", "crontab"],
+      "python_min_version": "3.10",
+      "modules": ["datetime"],
+      "code": "import datetime\n\ndef matches_cron_field(field_val: int, pattern: str) -> bool:\n    if pattern == '*':\n        return True\n    if pattern.startswith('*/'):\n        step = int(pattern[2:])\n        return field_val % step == 0\n    if ',' in pattern:\n        return field_val in [int(x) for x in pattern.split(',')]\n    if '-' in pattern:\n        start, end = map(int, pattern.split('-'))\n        return start <= field_val <= end\n    return field_val == int(pattern)\n\ndef is_cron_due(cron_expr: str, dt: datetime.datetime) -> bool:\n    minute_p, hour_p, day_p, month_p, dow_p = cron_expr.split()\n    return (\n        matches_cron_field(dt.minute, minute_p) and\n        matches_cron_field(dt.hour, hour_p) and\n        matches_cron_field(dt.day, day_p) and\n        matches_cron_field(dt.month, month_p) and\n        matches_cron_field(dt.weekday(), dow_p)\n    )\n"
+    },
+    {
+      "id": "event-emitter",
+      "name": "Thread-Safe Event Emitter Pub/Sub",
+      "replaces": ["pyee", "blinkers"],
+      "python_min_version": "3.10",
+      "modules": ["collections", "threading"],
+      "code": "from collections import defaultdict\nfrom threading import Lock\nfrom typing import Callable, Any\n\nclass EventEmitter:\n    def __init__(self):\n        self._listeners = defaultdict(list)\n        self._lock = Lock()\n\n    def on(self, event: str, listener: Callable[[Any], None]) -> None:\n        with self._lock:\n            self._listeners[event].append(listener)\n\n    def emit(self, event: str, *args, **kwargs) -> None:\n        with self._lock:\n            callbacks = list(self._listeners.get(event, []))\n        for cb in callbacks:\n            cb(*args, **kwargs)\n"
+    },
+    {
+      "id": "ip-address-validator",
+      "name": "CIDR Network IP Validator and Containment Checker",
+      "replaces": ["netaddr", "ipwhois"],
+      "python_min_version": "3.10",
+      "modules": ["ipaddress"],
+      "code": "import ipaddress\n\ndef is_ip_in_network(ip_str: str, cidr_str: str) -> bool:\n    ip = ipaddress.ip_address(ip_str)\n    net = ipaddress.ip_network(cidr_str, strict=False)\n    return ip in net\n\ndef is_private_ip(ip_str: str) -> bool:\n    return ipaddress.ip_address(ip_str).is_private\n"
+    },
+    {
+      "id": "uuidv7-monotonic-generator",
+      "name": "Time-Ordered Monotonic UUIDv7 Generator",
+      "replaces": ["uuid6", "ulid-py"],
+      "python_min_version": "3.10",
+      "modules": ["time", "secrets", "uuid"],
+      "code": "import time\nimport secrets\nimport uuid\n\n_last_ms = 0\n_counter = 0\n\ndef generate_uuidv7() -> uuid.UUID:\n    global _last_ms, _counter\n    now_ms = int(time.time() * 1000)\n    if now_ms <= _last_ms:\n        now_ms = _last_ms\n        _counter = (_counter + 1) & 0xFFF\n        if _counter == 0:\n            now_ms += 1\n            _last_ms = now_ms\n    else:\n        _last_ms = now_ms\n        _counter = 0\n    ts_bytes = now_ms.to_bytes(6, byteorder='big')\n    rand_bytes = secrets.token_bytes(8)\n    octet6 = 0x70 | ((_counter >> 8) & 0x0F)\n    octet7 = _counter & 0xFF\n    octet8 = 0x80 | (rand_bytes[0] & 0x3F)\n    raw = ts_bytes + bytes([octet6, octet7, octet8]) + rand_bytes[1:]\n    return uuid.UUID(bytes=raw)\n"
+    },
+    {
+      "id": "stream-chunk-hasher",
+      "name": "Incremental Stream SHA-256 Digest Hasher",
+      "replaces": ["cryptography"],
+      "python_min_version": "3.11",
+      "modules": ["hashlib"],
+      "code": "import hashlib\nfrom typing import BinaryIO\n\ndef hash_binary_stream(stream: BinaryIO) -> str:\n    if hasattr(hashlib, 'file_digest'):\n        return hashlib.file_digest(stream, 'sha256').hexdigest()\n    hasher = hashlib.sha256()\n    while chunk := stream.read(65536):\n        hasher.update(chunk)\n    return hasher.hexdigest()\n"
+    },
+    {
+      "id": "env-config-loader",
+      "name": "Typed Environment Configuration Loader",
+      "replaces": ["pydantic-settings", "python-dotenv", "decouple"],
+      "python_min_version": "3.10",
+      "modules": ["os"],
+      "code": "import os\nfrom typing import TypeVar, Type, Optional\n\nT = TypeVar('T', str, int, float, bool)\n\ndef get_env_var(name: str, default: Optional[T] = None, var_type: Type[T] = str) -> T:\n    val = os.environ.get(name)\n    if val is None:\n        if default is not None:\n            return default\n        raise KeyError(f\"Missing required environment variable '{name}'\")\n    if var_type is bool:\n        return val.lower() in ('true', '1', 'yes', 'on')\n    return var_type(val)\n"
+    },
+    {
+      "id": "simple-http-file-server",
+      "name": "Embedded Single-File Static Web & Health Server",
+      "replaces": ["flask", "fastapi"],
+      "python_min_version": "3.10",
+      "modules": ["http.server", "socketserver", "threading"],
+      "code": "import http.server\nimport socketserver\nimport threading\n\nclass HealthHandler(http.server.SimpleHTTPRequestHandler):\n    def do_GET(self):\n        if self.path == '/health':\n            self.send_response(200)\n            self.send_header('Content-Type', 'application/json')\n            self.end_headers()\n            self.wfile.write(b'{\"status\":\"ok\"}')\n        else:\n            super().do_GET()\n\ndef start_server_in_thread(port: int = 8080) -> socketserver.TCPServer:\n    server = socketserver.TCPServer(('', port), HealthHandler)\n    t = threading.Thread(target=server.serve_forever, daemon=True)\n    t.start()\n    return server\n"
+    },
+    {
+      "id": "priority-task-queue",
+      "name": "Thread-Safe Min-Heap Priority Task Queue",
+      "replaces": ["priorityq"],
+      "python_min_version": "3.10",
+      "modules": ["heapq", "threading", "dataclasses"],
+      "code": "import heapq\nimport threading\nfrom dataclasses import dataclass, field\nfrom typing import Any, Optional\n\n@dataclass(order=True)\nclass PrioritizedTask:\n    priority: int\n    data: Any = field(compare=False)\n\nclass PriorityQueue:\n    def __init__(self):\n        self._heap = []\n        self._lock = threading.Lock()\n\n    def push(self, item: Any, priority: int = 100) -> None:\n        with self._lock:\n            heapq.heappush(self._heap, PrioritizedTask(priority, item))\n\n    def pop(self) -> Optional[Any]:\n        with self._lock:\n            if not self._heap:\n                return None\n            return heapq.heappop(self._heap).data\n\n    def __len__(self) -> int:\n        with self._lock:\n            return len(self._heap)\n"
+    },
+    {
+      "id": "pathlib-file-walker",
+      "name": "Recursive Directory Walker & Filter",
+      "replaces": ["scandir"],
+      "python_min_version": "3.10",
+      "modules": ["pathlib"],
+      "code": "from pathlib import Path\nfrom typing import Iterator\n\ndef walk_files_with_extension(root_dir: Path, extension: str) -> Iterator[Path]:\n    root = Path(root_dir)\n    ext = extension if extension.startswith('.') else f\".{extension}\"\n    for p in root.rglob(f\"*{ext}\"):\n        if p.is_file():\n            yield p\n"
+    },
+    {
+      "id": "process-signal-handler",
+      "name": "Graceful Process Signal & Shutdown Coordinator",
+      "replaces": ["graceful_death"],
+      "python_min_version": "3.10",
+      "modules": ["signal", "threading"],
+      "code": "import signal\nimport threading\nfrom typing import Optional\n\nclass ShutdownCoordinator:\n    def __init__(self):\n        self._stop_event = threading.Event()\n        signal.signal(signal.SIGINT, self._handle_signal)\n        signal.signal(signal.SIGTERM, self._handle_signal)\n\n    def _handle_signal(self, signum, frame):\n        self._stop_event.set()\n\n    def is_shutting_down(self) -> bool:\n        return self._stop_event.is_set()\n\n    def wait(self, timeout: Optional[float] = None) -> bool:\n        return self._stop_event.wait(timeout)\n"
     }
   ]
 }

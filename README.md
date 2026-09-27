@@ -282,13 +282,17 @@ Production libraries on PyPI with **0 runtime dependencies**:
 
 ---
 
-## AST Verification Gate
+## AST Verification & Test Suite Gate
 
-Every snippet in this repository is tested in CI via `scripts/verify_zero_deps.py`:
+Every snippet and recipe in this repository is verified in CI:
 ```bash
+# 1. AST Zero-Dependency Linter across README and registry.json (30 recipes)
 python scripts/verify_zero_deps.py
+
+# 2. Comprehensive unit test suite executing all recipes
+python -m unittest discover -s tests -v
 ```
-Uses `ast.parse` to ensure 100% of imported modules exist within `sys.stdlib_module_names`.
+Uses `ast.parse` to ensure 100% of imported modules exist within `sys.stdlib_module_names`. All 30 recipes in `registry.json` are executable and covered by automated regression tests.
 
 ---
 
