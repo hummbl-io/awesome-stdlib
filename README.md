@@ -308,4 +308,4 @@ Pull requests are welcome! All submissions must satisfy one rule:
 
 ## License
 
-Apache-2.0 © 2026 HUMMBL, LLC
+Apache-2.0 © 2026 Reuben Bowlby
